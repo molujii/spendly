@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
 from database.db import get_db, init_db, seed_db
@@ -30,7 +31,7 @@ def privacy():
 def register():
     if request.method == "GET":
         if session.get("user_id"):
-            return redirect(url_for("landing"))
+            return redirect(url_for("profile"))
         return render_template("register.html")
 
     name = request.form.get("name", "").strip()
@@ -68,7 +69,7 @@ def register():
 def login():
     if request.method == "GET":
         if session.get("user_id"):
-            return redirect(url_for("landing"))
+            return redirect(url_for("profile"))
         registered = request.args.get("registered") == "1"
         return render_template("login.html", registered=registered)
 
@@ -84,7 +85,7 @@ def login():
     if user and check_password_hash(user["password_hash"], password):
         session["user_id"] = user["id"]
         session["user_name"] = user["name"]
-        return redirect(url_for("landing"))
+        return redirect(url_for("profile"))
 
     return render_template("login.html", error="Invalid email or password")
 
@@ -101,7 +102,49 @@ def logout():
 
 @app.route("/profile")
 def profile():
-    return "Profile page — coming in Step 4"
+    if not session.get("user_id"):
+        return redirect(url_for("login"))
+    conn = get_db()
+    user = conn.execute(
+        "SELECT * FROM users WHERE id = ?", (session["user_id"],)
+    ).fetchone()
+    expense_count = conn.execute(
+        "SELECT COUNT(*) FROM expenses WHERE user_id = ?", (session["user_id"],)
+    ).fetchone()[0]
+    conn.close()
+    member_since = datetime.strptime(user["created_at"], "%Y-%m-%d %H:%M:%S").strftime("%B %Y")
+
+    transactions = [
+        {"date": "Apr 15, 2026", "description": "Restaurant dinner",  "category": "Food",          "amount": 22.00},
+        {"date": "Apr 13, 2026", "description": "Miscellaneous",      "category": "Other",         "amount": 15.00},
+        {"date": "Apr 11, 2026", "description": "Clothing",           "category": "Shopping",      "amount": 60.00},
+        {"date": "Apr 09, 2026", "description": "Movie tickets",      "category": "Entertainment", "amount": 20.00},
+        {"date": "Apr 07, 2026", "description": "Pharmacy",           "category": "Health",        "amount": 45.00},
+    ]
+
+    categories = [
+        {"name": "Bills",         "amount": 95.00, "count": 1},
+        {"name": "Shopping",      "amount": 60.00, "count": 1},
+        {"name": "Health",        "amount": 45.00, "count": 1},
+        {"name": "Food",          "amount": 34.50, "count": 2},
+        {"name": "Entertainment", "amount": 20.00, "count": 1},
+        {"name": "Other",         "amount": 15.00, "count": 1},
+        {"name": "Transport",     "amount":  8.00, "count": 1},
+    ]
+
+    total_spent = sum(c["amount"] for c in categories)
+    top_category = categories[0]["name"]
+
+    return render_template(
+        "profile.html",
+        user=user,
+        expense_count=expense_count,
+        member_since=member_since,
+        transactions=transactions,
+        categories=categories,
+        total_spent=total_spent,
+        top_category=top_category,
+    )
 
 
 @app.route("/expenses/add")
